@@ -8,8 +8,9 @@
 # .................................................................................................
 
 ## Modules
-import os, arcpy, pandas
+import os, arcpy, pandas, shutil
 from arcpy import env  # this is for setting working environments to run certain arcpy functions
+from arcpy.sa import *  # this module is for extracting raster by extent
 
 ## Check out necessary licenses
 arcpy.CheckOutExtension("spatial")
@@ -24,13 +25,16 @@ bathgdb = r'Z:\vmshare\bathymetry\bathymetry.gdb'
 # input directory where original species distribution shapefiles are located
 indir = r'Z:\vmshare\wedge-guitarfish'
 # output directory where refined (clipped to high-res bathmetry depths) species distribution ranges will be saved to
-arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="wedge-guitarfish-refine", out_version="CURRENT") # create the GDB first
+# create the GDB first (commented out once the GDB is created, to ensure it can't be overwritten!)
+# arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="wedge-guitarfish-refine", out_version="CURRENT")
 outdir = basedir + '\\wedge-guitarfish-refine.gdb'
 # directory to hold any temporary files in the middle of analysis loops
-arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="tmp-files", out_version="CURRENT") # create the GDB first
+# create the GDB first (commented out once the GDB is created, to ensure it can't be overwritten!)
+# arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="tmp-files", out_version="CURRENT")
 tmpdir = basedir + '\\tmp-files.gdb'
 # directory to hold distribution range proportional files for each species and respective countries
-arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="proportional-files", out_version="CURRENT") # create the GDB first
+# create the GDB first (commented out once the GDB is created, to ensure it can't be overwritten!)
+# arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="proportional-files", out_version="CURRENT")
 propout = basedir + '\\proportional-files.gdb'
 # directory for final exports of proportional ranges of each species for each country
 propTables = indir + '\\Tables\\country_props'
@@ -46,7 +50,8 @@ countryCodes = list(pandas.read_csv(basedir + '\\tables\\complete_country_codes.
 spCountries = pandas.read_csv(basedir + '\\tables\\wedge-guitarfish-countries.csv')
 
 
-# create an object for the desired projected coordinate system (all files will need to be in the same PCS prior to any analyses)
+# create an object for the desired projected coordinate system
+# (all files will need to be in the same PCS prior to any analyses)
 # we need the PCS in "well-known text" (WKT) format
 # (online database of reference systems in various formats: https://spatialreference.org/)
 pcs = 'PROJCS["World_Behrmann",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Behrmann"],PARAMETER["False_Easting",0],PARAMETER["False_Northing",0],PARAMETER["Central_Meridian",0],UNIT["Meter",1]]' # World Behrmann Equal Area Cylindrical PCS
@@ -55,18 +60,17 @@ gcs = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.
 
 
 ## Prep work for all distribution range shapefiles
-# create geodatabase that will contain all files
-arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="species_ranges", out_version="CURRENT")
+# create geodatabase to contain all files (commented out once the GDB is created, to ensure it can't be overwritten!)
+# arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="species_ranges", out_version="CURRENT")
 # create local variable for this geodatabase
-spGDB = basedir + '\\' + '\species_ranges.gdb'
+spGDB = basedir + '\\species_ranges.gdb'
 # make a list of all species whose distribution ranges we are working with
-# first arrange directories so all shapefiles (and related other associated files) are all contained in the main directory (i.e. not split into subdirectories)
-import os
-import shutil
+# first arrange directories so all shapefiles (and related other associated files) are all contained in the
+# main directory (i.e. not split into subdirectories)
 
-Subfolders = os.listdir(indir)            # get the list of all species subfolders
-for Subfolder in Subfolders:                 # iterate through each subfolder
-    sfiles = os.listdir(indir + '\\' + Subfolder) # get list of file at each subfolder and move into main directory
+Subfolders = os.listdir(indir)  # get the list of all species subfolders
+for Subfolder in Subfolders:  # iterate through each subfolder
+    sfiles = os.listdir(indir + '\\' + Subfolder)  # get list of file at each subfolder and move into main directory
     for sfile in sfiles:
         shutil.move(indir + '\\' + Subfolder + '\\' + sfile, indir)
 
@@ -91,39 +95,42 @@ for shapefile in listofShps:
     outShp = os.path.join(spGDB, os.path.splitext(shapefile)[0])
     arcpy.CopyFeatures_management(shapefile, outShp)
 
-##### To figure out maximum extent of bathymetry layer that we need to extract (to minimise extent of bathymetry to handle, by clipping relevant section only)
+### To figure out the maximum extent of bathymetry layer that we need to extract, so that we can minimise
+### the extent of bathymetry information to handle (by clipping relevant section only)
 # First set workspace to the right geodatabase
 env.workspace = spGDB
 # List all shapefiles in geodatabase to union
 listSp = arcpy.ListFeatureClasses("*", "POLYGON")
 arcpy.Union_analysis(listSp, "Allsp_union")
 # Deriving extent
-fullExt = spGDB + '\\' + 'Allsp_union'
-desc=arcpy.Describe(fullExt)
+fullExt = spGDB + '\\Allsp_union'
+desc = arcpy.Describe(fullExt)
 # Turn this information into an extent objects
 xmin = desc.extent.XMin
 xmax = desc.extent.XMax
 ymin = desc.extent.YMin
 ymax = desc.extent.YMax
-# Important !! - set the environmental extent so that the output raster is set to the correct extent of the area we are extracting
-#arcpy.env.extent = arcpy.Extent(xmin, ymin, xmax, ymax)
-arcpy.env.extent = spGDB + '\\' + 'Allsp_union'  # this is the shapefile of all union distribution ranges created earlier
+# Important !! - set the environmental extent so that the output raster is set to the correct extent of the area
+# we are extracting
+# arcpy.env.extent = arcpy.Extent(xmin, ymin, xmax, ymax)
+arcpy.env.extent = spGDB + '\\Allsp_union'  # the shapefile of all union distribution ranges created earlier
 # Set local variables
-from arcpy.sa import *
-inRas = 'mar_bathy'
+# from arcpy.sa import *
 inRectangle = Extent(XMin=xmin, YMin=ymin, XMax=xmax, YMax=ymax)
 # Extract bathymetry based on relevant extent
 rasExport = ExtractByRectangle(bathyras, inRectangle, "INSIDE")
 # Save the output
-rasExport.save(bathgdb + '\\' + 'bath_exp')
+rasExport.save(bathgdb + '\\bath_exp')
 
 ## Doing the basic work of projecting all relevant files (bathymetry raster, species distribution shapefiles)
 # bathymetry raster
-arcpy.ProjectRaster_management(in_raster=bathgdb + '\\' + 'bath_exp', out_raster=bathgdb + '\\' + 'bath_exp_prj', out_coor_system=pcs, resampling_type="BILINEAR", vertical="NO_VERTICAL")
+arcpy.ProjectRaster_management(in_raster=bathgdb + '\\bath_exp', out_raster=bathgdb + '\\bath_exp_prj',
+                               out_coor_system=pcs, resampling_type="BILINEAR", vertical="NO_VERTICAL")
 
 # species distribution files (located in a geodatabase)
 # Create new geodatabase that will hold the reprojected distribution maps and output files
-arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="wedge-guitarfish", out_version="CURRENT")
+# (commented out once the GDB is created, to ensure it can't be overwritten!)
+# arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="wedge-guitarfish", out_version="CURRENT")
 workGDB = basedir + '\\wedge-guitarfish.gdb'  # (TOCHANGE)
 
 # make a list of the distribution ranges that need projecting
@@ -150,7 +157,8 @@ for Sp in listSp:
 # Read in all relevant information from a csv. The 'converters' call is to force read_csv to read it is as a string
 # object; range(50) is number equal or greater than number of columns
 # https://stackoverflow.com/questions/16988526/pandas-reading-csv-as-string-type
-sp_depth = pandas.read_csv('/Users/jessicacheok/Documents/Work/GSTP/RLI/wedge-guitarfish/spp_depths_fin.csv', converters={i: str for i in range(50)}) # (TOCHANGE)
+sp_depth = pandas.read_csv(r'Z:/vmshare/wedge-guitarfish/Tables/spp_depths_fin.csv',
+                           converters={i: str for i in range(50)})  # (TOCHANGE: local filepath)
 print(sp_depth)
 # Extract all species name into a list
 sp_names = sp_depth["Name"].tolist()
@@ -164,6 +172,8 @@ depth_ranges = list(zip(sp_names, upper_depths, lower_depths))
 
 ## Customised 'refine to bathmetry' arcpy function
 # https://gis.stackexchange.com/questions/246331/saving-python-script-as-a-tool-in-arcgis
+
+
 def RefineToBathymetry(workspace, species, mindepth, maxdepth, outspace):
     # Import arcpy module
     import arcpy, os
@@ -198,12 +208,12 @@ def RefineToBathymetry(workspace, species, mindepth, maxdepth, outspace):
 # Now for the actual work
 counter = 0  # counter to keep track of where we are in the loop
 
-for species, mindepth, maxdepth, in depth_ranges:
+for spp, mind, maxd, in depth_ranges:
     counter = counter + 1
     # Print current species working on in this iteration and number tracking
-    print('Working on species: ' + species + ', ' + str(counter) + " out of " + str(len(depth_ranges)))
+    print('Working on species: ' + spp + ', ' + str(counter) + " out of " + str(len(depth_ranges)))
     # Apply IUCN clipping tool
-    RefineToBathymetry(workGDB, species, mindepth, maxdepth, outdir)
+    RefineToBathymetry(workGDB, spp, mind, maxd, outdir)
     print('... Coarse shapefile clipped to bathymetry.')
     arcpy.Delete_management('in_memory')
 
@@ -220,33 +230,33 @@ totalSpRange = pandas.DataFrame(columns=['species', 'area_sqkm'])
 # looping through refined ranges to calculate total area
 for sparea in listSp_areas:
     counter = counter + 1
-    # add new field to attribute table to calculate area in
-    arcpy.AddField_management(sparea, "range_area", "DOUBLE")
-    # expression to calculate area in square kilometres
-    exp = "!SHAPE.AREA@SQUAREKILOMETERS!"
-    arcpy.CalculateField_management(sparea, "range_area", exp, "PYTHON_9.3")
-    print('... Total area calculated for ' + sparea)
-
+    # # add new field to attribute table to calculate area in
+    # arcpy.AddField_management(sparea, "range_area", "DOUBLE")
+    # # expression to calculate area in square kilometres
+    # exp = "!SHAPE.AREA@SQUAREKILOMETERS!"
+    # arcpy.CalculateField_management(sparea, "range_area", exp, "PYTHON_9.3")
+    # print('... Total area calculated for ' + sparea)
     # to extract the newly calculated area in square kilometres
     totalSpArea = 0
     with arcpy.da.SearchCursor(sparea, ["range_area"]) as cursor:
         for row in cursor:
-            totalSpArea = totalSpArea + row[0]  # areas for each row are being summed but this should not be necessary as the output shapefiles should only have one feature/polygon
-    print('... Total range area for ' + species + ' saved.')
-    # now append this information to empty dataframe that will contain all proportional areas calculated for each species, within each country
-    totalSpRange = totalSpRange.append({'species': sparea, 'area_sqkm': totalSpArea}, ignore_index=True)
+            # areas for each row are being summed but this should not be necessary as the output shapefiles should
+            # only have one feature/polygon
+            totalSpArea = totalSpArea + row[0]
+    print('... Total range area for ' + sparea + ' saved.')
+    # now append this information to empty dataframe that will contain all proportional areas calculated for
+    # each species within each country
+    totalSpRange = totalSpRange.append({'species': sparea[:-5], 'area_sqkm': totalSpArea}, ignore_index=True)
     print(totalSpRange.tail(1))  # print the last line that was appended to the dataframe
     # clear any space taken up in arcpy memory
     arcpy.Delete_management('in_memory')
-
-    # export final attribute with calculated total area as .dbf file
-    arcpy.TableToTable_conversion(sparea + '.dbf', indir + '\\Tables', sparea[:-5])
-    #arcpy.MakeTableView_management(outdir + '\\' + sparea + '.dbf', indir + '\\Tables\\' + sparea[:-5] + '_table')
-    print('... Attribute table saved for ' + sparea)
+# export all calculated proportional areas to a .csv file
+totalSpRange.to_csv(propTables + '\\all_species_total_range.csv')
+print('... Loop successfully run until completion.')
 
 ## Intersecting with each country's EEZ and calculating proportion of total range for each species, in each country
 # note that the ISO-2-digit country codes are used for linking between the SIS exported information and the EEZ data
-# extract a list of unique countries that are listed in the datatable containing all information on species' countries occurrence
+# extract a list of all unique countries that are included in SIS export of species' countries occurrence
 # extracting the 3-digit ISO codes
 listCountries = spCountries.iso_3code.unique()
 counter = 0
@@ -277,33 +287,36 @@ for country in listCountries:
     print(speciesList)
 
     # loop through this list of species names to calculate proportion of range in country x's EEZ
-    for species in speciesList:
+    for spec in speciesList:
         # set species counter
         spCounter = spCounter + 1
         print('... Entering species loop; working on species ' + str(spCounter) + ' out of ' + str(len(speciesList)) + ' for country ' + country)
         # have to replace the ' ' in the species name with an '_' for filename purposes
-        species = species.replace(' ', '_')
-        print(species)
+        spec = spec.replace(' ', '_')
+        print(spec)
         # take species x distribution range and clip to country x EEZ
-        arcpy.Clip_analysis(in_features=outdir + '\\' + species + '_clip', clip_features=tmpdir + '\\' + country + '_eez',
-                            out_feature_class=propout + '\\' + country + '_' + species)
-        print('... Distribution of ' + species + ' clipped to country ' + country)
+        arcpy.Clip_analysis(in_features=outdir + '\\' + spec + '_clip', clip_features=tmpdir + '\\' + country + '_eez',
+                            out_feature_class=propout + '\\' + country + '_' + spec)
+        print('... Distribution of ' + spec + ' clipped to country ' + country)
         # add new field to attribute table to calculate area in
         arcpy.env.workspace = propout
-        infileName = propout + '\\' + country + '_' + species
+        infileName = propout + '\\' + country + '_' + spec
         arcpy.AddField_management(infileName, "range_area", "DOUBLE")
         # expression to calculate area in square kilometres
         exp = "!SHAPE.AREA@SQUAREKILOMETERS!"
         arcpy.CalculateField_management(infileName, "range_area", exp, "PYTHON_9.3")
-        print('... Proportional area calculated in attribute table for ' + species)
+        print('... Proportional area calculated in attribute table for ' + spec)
         # to extract the newly calculated area in square kilometres
         spAreainEEZ = 0
         with arcpy.da.SearchCursor(infileName, ["range_area"]) as cursor:
             for row in cursor:
-                spAreainEEZ = spAreainEEZ + row[0]  # areas for each row are being summed but this should not be necessary as the output shapefiles should only have one feature/polygon
-        print('... Proportional area for ' + species + ' in country ' + country + ', saved.')
-        # now append this information to empty dataframe that will contain all proportional areas calculated for each species, within each country
-        countrySp_prop = countrySp_prop.append({'country': country, 'species': species, 'area_sqkm': spAreainEEZ}, ignore_index=True)
+                # areas for each row are being summed but this should not be necessary, as the output shapefiles
+                # should only have one feature/polygon
+                spAreainEEZ = spAreainEEZ + row[0]
+        print('... Proportional area for ' + spec + ' in country ' + country + ', saved.')
+        # now append this information to empty dataframe that will contain all proportional areas calculated
+        # for each species, within each country
+        countrySp_prop = countrySp_prop.append({'country': country, 'species': spec, 'area_sqkm': spAreainEEZ}, ignore_index=True)
         print(countrySp_prop.tail(1))  # print the last line that was appended to the dataframe
         # clear any space taken up in arcpy memory
         arcpy.Delete_management('in_memory')
