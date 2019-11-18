@@ -23,7 +23,7 @@ basedir = r'Z:\vmshare\rli'
 # geodatabase containing bathymetry related data
 bathgdb = r'Z:\vmshare\bathymetry\bathymetry.gdb'
 # input directory where original species distribution shapefiles are located
-indir = r'Z:\vmshare\wedge-guitarfish'
+indir = r'Z:\vmshare\wedge-guitarfish\shpfiles'
 # output directory where refined (clipped to high-res bathmetry depths) species distribution ranges will be saved to
 # create the GDB first (commented out once the GDB is created, to ensure it can't be overwritten!)
 # arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="wedge-guitarfish-refine", out_version="CURRENT")
@@ -37,7 +37,7 @@ tmpdir = basedir + '\\tmp-files.gdb'
 # arcpy.CreateFileGDB_management(out_folder_path=basedir, out_name="proportional-files", out_version="CURRENT")
 propout = basedir + '\\proportional-files.gdb'
 # directory for final exports of proportional ranges of each species for each country
-propTables = indir + '\\Tables\\country_props'
+propTables = indir[:-8] + 'Tables\\country_props'
 # Files
 # name of original bathymetry raster
 bathyras = bathgdb + '\\mar_bathy'
@@ -89,6 +89,10 @@ listofFiles = os.listdir(indir)
 arcpy.env.workspace = indir
 # List all shapefiles in the arcpy workspace for copying into the first geodatabase
 listofShps = arcpy.ListFeatureClasses()
+# if ever have unwanted species in this list, a way to get rid of them:
+# unwanted = [0, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+# for ele in sorted(unwanted, reverse=True):
+#     del listofShps[ele]
 # Execute CopyFeatures for each input shapefile
 for shapefile in listofShps:
     # Determine the new output feature class path and name
@@ -138,6 +142,10 @@ arcpy.env.workspace = spGDB
 listSp = arcpy.ListFeatureClasses("*", "POLYGON")
 # Remove the union shapefile of all ranges that is also in the spGDB
 listSp.remove('Allsp_union')
+# if ever have unwanted species in this list, a way to get rid of them:
+# unwanted = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+# for ele in sorted(unwanted, reverse=True):
+#     del listSp[ele]
 # Print results
 print('List of species: ')
 print(listSp)
@@ -151,7 +159,7 @@ for Sp in listSp:
                              out_coor_system=pcs,
                              transform_method="",
                              preserve_shape="NO_PRESERVE_SHAPE", max_deviation="", vertical="NO_VERTICAL")
-    print('Species' + Sp + ' projected into geodatabase, ' + str(counter))
+    print('Species ' + Sp + ' projected into geodatabase, ' + str(counter))
 
 ##### Clip all species shapefiles to correct bathymetry ranges
 # Read in all relevant information from a csv. The 'converters' call is to force read_csv to read it is as a string
@@ -160,6 +168,8 @@ for Sp in listSp:
 sp_depth = pandas.read_csv(r'Z:/vmshare/wedge-guitarfish/Tables/spp_depths_fin.csv',
                            converters={i: str for i in range(50)})  # (TOCHANGE: local filepath)
 print(sp_depth)
+# if ever need to extract only some rows of the species depths list
+# sp_depth = sp_depth.drop([0,1,2,3,4,5,6,7,9,11,12,13,14], axis=0)
 # Extract all species name into a list
 sp_names = sp_depth["Name"].tolist()
 # sp_names[:] = [name.replace(' ', '_') for name in sp_names]  # to replace unwanted symbols for naming
@@ -224,18 +234,22 @@ print('Iterative refinement to species range depths complete.')
 # make a list of the distribution ranges that need projecting
 arcpy.env.workspace = outdir
 listSp_areas = arcpy.ListFeatureClasses("*", "POLYGON")
+# if ever have unwanted species in this list, a way to get rid of them:
+unwanted = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+for ele in sorted(unwanted, reverse=True):
+    del listSp_areas[ele]
 counter = 0  # begin counter for looping
 # create an empty pandas dataframe to append outputs rows to
 totalSpRange = pandas.DataFrame(columns=['species', 'area_sqkm'])
 # looping through refined ranges to calculate total area
 for sparea in listSp_areas:
     counter = counter + 1
-    # # add new field to attribute table to calculate area in
-    # arcpy.AddField_management(sparea, "range_area", "DOUBLE")
-    # # expression to calculate area in square kilometres
-    # exp = "!SHAPE.AREA@SQUAREKILOMETERS!"
-    # arcpy.CalculateField_management(sparea, "range_area", exp, "PYTHON_9.3")
-    # print('... Total area calculated for ' + sparea)
+    # add new field to attribute table to calculate area in
+    arcpy.AddField_management(sparea, "range_area", "DOUBLE")
+    # expression to calculate area in square kilometres
+    exp = "!SHAPE.AREA@SQUAREKILOMETERS!"
+    arcpy.CalculateField_management(sparea, "range_area", exp, "PYTHON_9.3")
+    print('... Total area calculated for ' + sparea)
     # to extract the newly calculated area in square kilometres
     totalSpArea = 0
     with arcpy.da.SearchCursor(sparea, ["range_area"]) as cursor:
@@ -251,7 +265,7 @@ for sparea in listSp_areas:
     # clear any space taken up in arcpy memory
     arcpy.Delete_management('in_memory')
 # export all calculated proportional areas to a .csv file
-totalSpRange.to_csv(propTables + '\\all_species_total_range.csv')
+totalSpRange.to_csv(propTables + '\\all_species_total_range2.csv')
 print('... Loop successfully run until completion.')
 
 ## Intersecting with each country's EEZ and calculating proportion of total range for each species, in each country
@@ -267,17 +281,17 @@ countrySp_prop = pandas.DataFrame(columns=['country', 'species', 'area_sqkm'])
 # for country in list of countries, do:
 for country in listCountries:
     counter = counter + 1
-    print('... Iterating through proportional range calculations for country ' + str(counter) + ' out of ' + str(len(listCountries)))
-    print(country)
-    # export EEZ of country x to temporary directory that holds in-between files
-    # first create a table view of the EEZ shapefile (basically an object that represents the attribute table)
-    arcpy.MakeFeatureLayer_management(mareez, tmpdir + '\\mareez_table')
-    # select country's EEZ by 3-digit ISO code
-    arcpy.SelectLayerByAttribute_management(tmpdir + '\\mareez_table', 'NEW_SELECTION', ' "ISO_3digit" = \'' + country + '\' ')  # ridiculous syntax required with backslashes for arcpy
-    print('... Country EEZ attribute selected.')
-    # save selected attribute to temporary directory
-    arcpy.CopyFeatures_management(tmpdir + '\\mareez_table', tmpdir + '\\' + country + '_eez')
-    print('... Country EEZ exported to new shapefile in temporary geodatabase.')
+    # print('... Iterating through proportional range calculations for country ' + str(counter) + ' out of ' + str(len(listCountries)))
+    # print(country)
+    # # export EEZ of country x to temporary directory that holds in-between files
+    # # first create a table view of the EEZ shapefile (basically an object that represents the attribute table)
+    # arcpy.MakeFeatureLayer_management(mareez, tmpdir + '\\mareez_table')
+    # # select country's EEZ by 3-digit ISO code
+    # arcpy.SelectLayerByAttribute_management(tmpdir + '\\mareez_table', 'NEW_SELECTION', ' "ISO_3digit" = \'' + country + '\' ')  # ridiculous syntax required with backslashes for arcpy
+    # print('... Country EEZ attribute selected.')
+    # # save selected attribute to temporary directory
+    # arcpy.CopyFeatures_management(tmpdir + '\\mareez_table', tmpdir + '\\' + country + '_eez')
+    # print('... Country EEZ exported to new shapefile in temporary geodatabase.')
 
     # filter list of all species that occur in country x using boolean expression
     speciesExtract = spCountries[spCountries['iso_3code'] == country]
@@ -325,7 +339,7 @@ for country in listCountries:
     spCounter = 0
     print('... End of one iteration of listCountries loop.')
 # export all calculated proportional areas to a .csv file
-countrySp_prop.to_csv(propTables + '\\all_countries_species_range_proportions.csv')
+countrySp_prop.to_csv(propTables + '\\all_countries_species_range_proportions2.csv')
 print('... Loop successfully run until completion.')
 # End script
 print(' (-:  (-:  (-:  All country-specific RLI values calculated for ' + str(len(listCountries)) + ' countries!  :-)  :-)  :-) ')
