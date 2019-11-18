@@ -51,7 +51,7 @@ mareez = bathgdb + '\\mareez_final_prj'
 # countryCodes = list(pandas.read_csv(basedir + '\\tables\\complete_country_codes.csv'))
 # species' countries of occurrence information TODO: Changing filename to match
 spCountries = pandas.read_csv(basedir + '\\tables\\se-africa-countries.csv')
-# this is an attempt to fix git
+
 
 # create an object for the desired projected coordinate system
 # (all files will need to be in the same PCS prior to any analyses)
