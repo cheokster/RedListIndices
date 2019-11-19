@@ -18,4 +18,3 @@ for Subfolder in Subfolders:  # iterate through each subfolder
         source = sfile[0] + '\\' + str(name)  # the shapefile-file we want to move
         destination = outdir + '\\' + name  # new folder that will contain all the shapfiles
         shutil.move(source, destination)
-
