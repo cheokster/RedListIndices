@@ -43,4 +43,3 @@ with open('SEA_spp_depths2.csv', 'wb') as f:  # 'wb' opens file in binary mode, 
     writer.writerow(["Name", "Upper_depth", "Lower_depth"])
     for val in spList:
         writer.writerow([val])
-
